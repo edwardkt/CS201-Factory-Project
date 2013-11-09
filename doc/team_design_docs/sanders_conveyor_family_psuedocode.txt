@@ -1,0 +1,340 @@
+Conveyor Family Pseudo-Code
+
+Public Classes
+	class Part {
+		String barcode
+		String recipe
+		
+		getters and setters
+	}
+
+CONVEYOR FAMILY
+
+	Data
+		PopUp popUp
+		Conveyor conveyor
+		//ArrayList<Sensor> sensors
+		ConveyorFamily cfLead
+		ConveyorFamily cfFollow
+
+	Messages
+	
+		msgConveyorReady() {
+			popUp.msgConveyorReady();
+		}
+		
+		msgConveyorPartReceived() {
+			popUp.msgPartReceived();
+		}
+		
+		msgHereIsNewPart( ConveyorFamily cf, Part part ) {
+			conveyor.msgHereIsNewPart( part );
+		}
+		
+		msgHereIsPartFromPopUp( Part part ) {
+			cfFollow.msgHereIsNewPart( part );
+		}
+		
+		msgRobotReady( Robot robot ) {
+			popUp.msgRobotReady( robot );
+		}
+		
+		msgMachinePart( Robot robot, Part part ) {
+			robot.msgMachinePart( part );
+		}
+		
+		msgRobotPartReceived( Robot robot ) {
+			popUp.msgRobotPartReceived( robot );
+		}
+		
+		msgPartDone( Robot robot ) {
+			popUp.msgPartDone( robot );
+		}
+		
+		msgPopUpUp( Robot robot ) {
+			robot.msgPopUpUp();
+		}
+		
+		msgHereIsPopUpPart( Robot robot, Part part ) {
+			popUp.msgHereIsPopUpPart( robot, part );
+		}
+		
+		msgIAmStopping() {
+			cfLead.msgConveyorStopping();
+		}
+		
+		msgIAmStarting() {
+			cfLead.msgConveyorReady();
+		}
+		
+		msgIReceivedPart() {
+			cfLead.msgConveyorPartReceive();
+		}
+		
+		msgConveyorStopping() {
+			popUp.msgConveyorStopping();
+		}
+		
+		
+CONVEYOR
+	
+	Data
+		boolean leadSensorDepressed = false;
+		boolean followSensorDepressed = false;
+		LinkedList<Part> parts;
+		Integer myIndex;
+		MyPopUp myPopUp;
+		String recipe;
+		ConveyorFamilyContainer myConveyorFamily;
+		Transducer transducer;
+		
+		class MyPopUp {
+			PopUp popup
+			boolean isUp
+			boolean robotAvailable
+			boolean hasPart
+		}
+		
+		boolean isRunning //if the conveyor is currently running
+		
+	Messages
+		msgHereIsNewPart( Part part ) {
+			parts.add( part );
+		}
+		
+		msgPopUpUp( boolean isUp ) {
+			myPopUp.isUp = isUp;
+		}
+		
+		msgRobotAvailable( boolean robotAvailable ) {
+			myPopUp.robotAvailable = robotAvailable;
+		}
+		
+		msgPopUpHasPart( boolean hasPart ) {
+			myPopUp.hasPart = hasPart;
+		}
+		
+		msgPopUpPartReceived( Part part ) {
+			parts.remove( part );
+		}
+		
+	Scheduler
+		
+		if followSensorDepressed
+			then
+				if isRunning
+					then
+						if myPopUp.isUp
+							then stopConveyor();
+						else if !myPopUp.isUp
+							then
+								if myPopUp.hasPart
+									then stopConveyor();
+								else if !myPopUp.robotAvailable and the first part in parts has a recipe such that ( this.recipe & part.recipe ) != 0
+									then stopConveyor();
+								else
+									transferPartToPopUp();
+				else if !isRunning
+					then
+						if !myPopUp.isUp 
+							then
+								if !myPopUp.hasPart
+									then
+										if the first part in parts has recipe such that ( this.recipe & part.recipe ) == 0
+											then startConveyor();
+										else if myPopUp.robotAvailable and the first part in parts has recipe such that ( this.recipe & part.recipe ) != 0
+											then startConveyor();
+				
+		else
+			if !followSensorDepressed and !isRunning
+				then startConveyor();
+					
+					
+	Actions
+	
+		void stopConveyor() {
+			isRunning = false;
+			myConveyorFamily.msgIAmStopping();
+			
+			Object[] args = new Object[1];
+			args[0] = myIndex;
+			transducer.fireEvent( TChannel.CONVEYOR, TEvent.CONVEYOR_DO_STOP, args );
+		}
+		
+		void startConveyor() {
+			isRunning = true;
+			myConveyorFamily.msgIAmStarting();
+			
+			Object[] args = new Object[1];
+			args[0] = myIndex;
+			transducer.fireEvent( TChannel.CONVEYOR, TEvent.CONVEYOR_DO_START, args );
+		}
+		
+		void transferPartToPopUp() {
+			myPopUp.popUp.msgHereIsPopUpPart( this, parts.getFirst() )
+		}
+			
+			
+	POPUP
+	
+		Data
+			boolean leadSensorDepressed = false;
+			boolean followConveyorFamilyReady = false;
+			Conveyor conveyor;
+			LinkedList<MyRobot> robots;
+			MyPart currentPart;
+			Integer myIndex;
+			String recipe;
+			Object lastPartSender;
+			ConveyorFamilyContainer myConveyorFamily;
+			Transducer transducer;
+			MyState myState;
+			MyHeight myHeight;
+	
+			enum RobotState{ Available, PartSent, MachiningPart, PartDone }
+			enum MyHeight{ Down, Lowering, Up, Rising }
+			enum MyState{ Empty, Loading, Releasing, Full }
+			
+			class MyRobot {
+				Robot robot;
+				RobotState state;
+			}
+			
+			class MyPart {
+				Part part;
+				boolean isMachined;
+			}
+			
+		
+		Messages
+		
+			msgHereIsPopUpPart( Conveyor conveyor, Part part ) {
+				conveyor.msgPopUpHasPart( true );
+				lastPartSender = conveyor;
+				currentPart = new MyPart( part, false );
+			}
+			
+			msgHereIsPopUpPart( Robot robot, Part part ) {
+				conveyor.msgPopUpHasPart( true );
+				lastPartSender = Robot;
+				currentPart = new MyPart( part, true );
+			}
+			
+			msgConveyorReady() {
+				followConveyorFamilyReady = true;
+			}
+			
+			//part received from following conveyor
+			msgPartReceived() {
+				currentPart = null;
+				conveyor.msgPopUpHasPart( false );
+			}
+			
+			msgRobotReady( Robot robot ) {
+				robots.add( new MyRobot( robot ) );
+				conveyor.msgRobotAvailable( true );
+			}
+			
+			msgRobotPartReceived( Robot robot ) {
+				currentPart = null;
+				conveyor.msgPopUpHasPart( false );
+				robots.get( robot ).state = RobotState.MachiningPart;
+			}
+			
+			msgPartDone( Robot robot ) {
+				robots.get( robot ).state = RobotState.PartDone;
+			}
+			
+			msgConveyorStopping() {
+				followConveyorFamilyReady = false;
+			}
+		
+		Scheduler
+			
+			if myHeight == MyHeight.Rising or myHeight == MyState.Lowering
+				//do nothing
+			else if myState = MyState.Empty 
+				then 
+					if myHeight == MyHeight.Up 
+						then 
+							if there is a robot in robots such that robot.state == RobotState.PartDone
+								then //PopUp is up with no part and a robot is finished machining a part
+									informRobot( robot );
+									break;
+							else if there is not a robot in robots such that robot.state == RobotState.PartDone
+								then //PopUp is up with no part and no robots are finished machining a part
+									lowerPopUp();
+					else if myHeight == MyHeight.Down and !leadSensorDepressed and there is a robot in robots such that robot.state == RobotState.PartDone
+						then //PopUp is down with no part, the sensor in front of the PopUp is not depressed and a robot has finished machining a part
+							raisePopUp();
+			else if myState = MyState.Full
+				then
+					if myHeight == MyHeight.Down
+						then
+							if followConveyorFamilyReady and ( currentPart.part.recipe & this.recipe ) == 0
+								then //PopUp is down with a part on it, the next conveyor family is ready to take 
+									 //a part and the part on the PopUp should not be machined at this station
+									releasePartToConveyor();
+							else if ( (currentPart.part.recipe & this.recipe) != 0 )
+								then
+									if !currentPart.isMachined
+										then//PopUp is down with a part on it that needs to be machine
+											raisePopUp();
+									else if followConveyorFamilyReady
+										then//PopUp is down with a part on it that does not need to be machine and the next conveyor is ready
+											releasePartToConveyor();
+					else if myHeight == MyHeight.Up
+						then
+							if ( ( currentPart.part.recipe & this.recipe ) != 0 )
+								then 
+									if currentPart.isMachined
+										then //PopUp is up with a part on it that matches the station's recipe and is machined
+											lowerPopUp();
+									else if !currentPart.isMachined and there is a robot in robots such that robot.state == RobotState.Available
+										then //PopUp is up with a part on it that needs to be machined by this station
+											releasePartToRobot( robot );
+
+		Actions
+
+			void releasePartToRobot( Robot robot ) {
+				myConveyorFamily.msgMachinePart( robot, currentPart.part );
+				robot.state = RobotState.PartSent;
+				checkForAvailableRobots();
+			}
+			
+			void releasePartToConveyor() {
+				myConveyorFamily.msgHereIsPartFromPopUp( currentPart.part );
+			}
+			
+			void checkForAvailableRobots() {
+				boolean robotAvailable = false;
+				for( Robot r : robots ) {
+					if ( r.state = RobotState.Available ) {			
+						robotAvailable = true;
+						break;
+					}
+				}
+				conveyor.msgRobotAvailable( robotAvailable );
+			}
+			
+			void raisePopUp() {
+				conveyor.msgPopUpUp( true );
+				myHeight = MyHeight.Raising;
+				
+				Object[] args = new Object[1];
+				args[0] = myIndex;
+				transducer.fireEvent( TChannel.POPUP, TEvent.POPUP_DO_MOVE_UP, args );
+			}
+			
+			void lowerPopUp() {
+				myHeight = MyHeight.Lowering;
+			
+				Object[] args = new Object[1];
+				args[0] = myIndex;
+				transducer.fireEvent( TChannel.POPUP, TEvent.POPUP_DO_MOVE_DOWN, args );
+			}
+			
+			void informRobot( Robot robot ) {
+				myConveyorFamily.msgPopUpUp( robot )
+			}
+	
